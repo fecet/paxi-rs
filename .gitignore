@@ -1,0 +1,14 @@
+
+# pixi environments
+.pixi
+*.egg-info
+
+
+# Added by cargo
+
+/target
+
+
+.ipynb_checkpoints
+mutagen.yml*
+.env

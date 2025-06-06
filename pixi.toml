@@ -1,0 +1,35 @@
+[workspace]
+authors = ["fecet <xiezej@gmail.com>"]
+channels = ["https://repo.prefix.dev/meta-forge", "conda-forge"]
+name = "paxi"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[system-requirements]
+cuda = "12.7"
+libc = { family = "glibc", version = "2.34" }
+
+[dependencies]
+rust = "<1.87"
+evcxr = "*"
+jupyterlab = "*"
+qemu = "*"
+podman-docker = "*"
+dagger = "*"
+virtiofsd = "*"
+podman = "*"
+dagger-io = "*"
+code-server = "*"
+ncurses = "*"
+bubblewrap = "*"
+gvproxy = "*"
+
+[activation.env]
+JUPYTER_PATH = "$CONDA_PREFIX/share/jupyter"
+CONTAINER_HOST = 'unix://$(find $XDG_RUNTIME_DIR -type s -name "*podman*api.sock" 2>/dev/null)'
+# CONTAINER_HOST = "unix:///var/run/podman/podman.sock"
+CONTAINER_NAME = "dagger-engine-custom"
+# _EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-image://registry.dagger.io/engine"
+_EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-container://$CONTAINER_NAME"
