@@ -12,3 +12,6 @@ engine http_proxy=env_var("HTTP_PROXY"):
       --env HTTPS_PROXY={{ http_proxy }} \
       --privileged \
       registry.dagger.io/engine:latest
+
+inspect:
+    docker exec -it $CONTAINER_NAME /bin/sh

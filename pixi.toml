@@ -16,15 +16,11 @@ rust = "<1.87"
 evcxr = "*"
 jupyterlab = "*"
 qemu = "*"
-podman-docker = "*"
 dagger = "*"
 virtiofsd = "*"
-podman = "*"
 dagger-io = "*"
-code-server = "*"
-ncurses = "*"
-bubblewrap = "*"
-gvproxy = "*"
+python = "3.10.*"
+podman-docker = "*"
 
 [activation.env]
 JUPYTER_PATH = "$CONDA_PREFIX/share/jupyter"
@@ -33,3 +29,8 @@ CONTAINER_HOST = 'unix://$(find $XDG_RUNTIME_DIR -type s -name "*podman*api.sock
 CONTAINER_NAME = "dagger-engine-custom"
 # _EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-image://registry.dagger.io/engine"
 _EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-container://$CONTAINER_NAME"
+_EXPERIMENTAL_DAGGER_CLI_BIN = "$CONDA_PREFIX/bin/dagger"
+__PIXI_ACTIVATION__SCRIPT__ = """$(
+touch $CONDA_PREFIX/etc/containers/nodocker
+)
+"""
