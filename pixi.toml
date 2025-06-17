@@ -1,3 +1,4 @@
+#:schema ../pixi/schema/schema.json
 [workspace]
 authors = ["fecet <xiezej@gmail.com>"]
 channels = ["https://repo.prefix.dev/meta-forge", "conda-forge"]
@@ -5,32 +6,99 @@ name = "paxi"
 platforms = ["linux-64"]
 version = "0.1.0"
 
-[tasks]
-
 [system-requirements]
 cuda = "12.7"
 libc = { family = "glibc", version = "2.34" }
 
 [dependencies]
-rust = "<1.87"
-evcxr = "*"
-jupyterlab = "*"
-qemu = "*"
+# rust = "<1.87"
+# evcxr = "*"
+just = "*"
+# jupyterlab = "*"
 dagger = "*"
-virtiofsd = "*"
 dagger-io = "*"
 python = "3.10.*"
-podman-docker = "*"
+dotenvx = "*"
+
+[feature.podman.dependencies]
+qemu = "*"
+virtiofsd = "*"
+podman-docker = ">=5.5.1"
+buildah = "*"
+
+[tasks]
+set-env = { cmd = "touch .env && echo {{value}}; dotenvx set {{ key }} {{ value }} --plain", args = [
+  "key",
+  "value",
+] }
+
+dagger-run = { cmd = "container | from alpine | with-exec -- {{ cmd }} | stdout", interpreter = "dagger", args = [
+  "cmd",
+] }
+
+[feature.podman.tasks]
+
+machine-run = { cmd = 'podman machine ssh podman-machine-default "cd $PWD && bash"' }
+
+init-machine = { cmd = 'podman machine list --format "{{ "{{.Name}}" }}" | grep -q podman-machine-default || podman machine init --username rok --image {{ image }}', args = [
+  { arg = "image", default = "docker://quay.io/podman/machine-os:next" },
+] }
+
+start-machine = { cmd = """\
+test -e $CONTAINER_SOCK || \
+  ( podman machine set --rootful && podman machine start )\
+  """, depends-on = ["init-machine"] }
+
+stop-machine = { cmd = "podman machine stop || true" }
+stop-engine.cmd = "podman stop $CONTAINER_NAME || true"
+restart-machine.depends-on = ["stop-machine", "start-machine"]
+
+start-engine = { cmd = """\
+podman ps --format "{{ "{{.Names}}" }}" | grep -qx $CONTAINER_NAME || \
+podman run --rm -d \
+-v /var/lib/dagger \
+--name $CONTAINER_NAME \
+${HTTP_PROXY:+--env HTTP_PROXY=$HTTP_PROXY --env HTTPS_PROXY=$HTTP_PROXY} \
+--privileged \
+registry.dagger.io/engine:latest \
+""", depends-on = ["start-machine"], interpreter = "bash" }
+
+set-machine.depends-on = [
+  "start-machine",
+  { task = "set-env", environment = "podman", args = [
+    "CONTAINER_HOST",
+    "unix://$CONTAINER_SOCK",
+  ] },
+]
+
+set-runner.depends-on = [
+  "set-machine",
+  { task = "set-env", environment = "podman", args = [
+    "_EXPERIMENTAL_DAGGER_RUNNER_HOST",
+    "docker-container://$CONTAINER_NAME",
+  ] },
+  { task = "set-env", environment = "podman", args = [
+    "PATH",
+    "$CONDA_PREFIX/bin:\\$PATH",
+  ] },
+]
+# attach-machine.cmd = { cmd = 'podman machine ssh podman-machine-default -tt "su - -l -s /usr/bin/zsh rok"'  }
+
+# attach-machine = { cmd = 'podman machine ssh', interpreter = "bash" }
+# attach-machine = { cmd = "ssh -i /home/rok/.local/share/containers/podman/machine/machine -p 43369 root@localhost" }
+
+[environments]
+podman = { features = ["podman"], solve-group = "default" }
+
+[feature.podman.activation.env]
+CONTAINER_NAME = "dagger-engine-custom"
+CONTAINER_SOCK = "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman-machine-default-api.sock"
+# _EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-container://$CONTAINER_NAME"
+# _EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-image://registry.dagger.io/engine"
+__ = """$(
+touch $CONDA_PREFIX/etc/containers/nodocker
+)"""
 
 [activation.env]
 JUPYTER_PATH = "$CONDA_PREFIX/share/jupyter"
-CONTAINER_HOST = 'unix://$(find $XDG_RUNTIME_DIR -type s -name "*podman*api.sock" 2>/dev/null)'
-# CONTAINER_HOST = "unix:///var/run/podman/podman.sock"
-CONTAINER_NAME = "dagger-engine-custom"
-# _EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-image://registry.dagger.io/engine"
-_EXPERIMENTAL_DAGGER_RUNNER_HOST = "docker-container://$CONTAINER_NAME"
 _EXPERIMENTAL_DAGGER_CLI_BIN = "$CONDA_PREFIX/bin/dagger"
-__PIXI_ACTIVATION__SCRIPT__ = """$(
-touch $CONDA_PREFIX/etc/containers/nodocker
-)
-"""
