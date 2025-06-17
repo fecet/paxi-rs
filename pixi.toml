@@ -19,28 +19,98 @@ dagger = "*"
 dagger-io = "*"
 python = "3.10.*"
 dotenvx = "*"
+jq = "*"
+podman = "*"
 
 [feature.podman.dependencies]
 qemu = "*"
 virtiofsd = "*"
 podman-docker = ">=5.5.1"
-buildah = "*"
+
+[feature.bootstrap.dependencies]
+
+[environments]
+podman = { features = ["podman"], solve-group = "default" }
+bootstrap = { features = ["podman", "bootstrap"], solve-group = "default" }
+
+[activation.env]
+JUPYTER_PATH = "$CONDA_PREFIX/share/jupyter"
+_EXPERIMENTAL_DAGGER_CLI_BIN = "$CONDA_PREFIX/bin/dagger"
 
 [tasks]
 set-env = { cmd = "touch .env && echo {{value}}; dotenvx set {{ key }} {{ value }} --plain", args = [
   "key",
   "value",
 ] }
+# | "export \(.key)=${\(.key):-\(.value|@sh)}"
+cache-activation = { cmd = '''
+pixi shell-hook -e {{ env }} --json | jq -r '
+  .environment_variables
+  | to_entries[]
+  | select( .key | startswith("__") | not )
+  | "export \(.key)=\(.value|@sh)"
+'
+''', args = [{ arg = "env", default = "default" }] }
 
 dagger-run = { cmd = "container | from alpine | with-exec -- {{ cmd }} | stdout", interpreter = "dagger", args = [
   "cmd",
 ] }
 
+ship-env.cmd = '''
+pixi shell-hook -e bootstrap --json | jq -r '
+  .environment_variables
+  | to_entries[]
+  | select( .key | startswith("__") | not )
+  | "export \(.key)=\(.value|@sh)"
+' | pixi run -e podman machine-bash -c "cat > /root/.bashrc"
+'''
+
+[feature.bootstrap.tasks.bootstrap-machine]
+cmd = """
+# pxr cache-activation podman | pxr machine-bash -c "cat > out"
+cat /root/.bashrc
+cd thirdparty/podman-machine-os
+SRCDIR="."
+./build.sh
+echo "Success Build"
+"""
+interpreter = "pixi run -e podman machine-bash"
+depends-on = ["ship-env"]
+
+[feature.bootstrap.activation.env]
+OUTDIR = "$(pwd)/thirdparty/podman-machine-os/outdir"
+REPO = "ghcr.io/fecet"
+
 [feature.podman.tasks]
+prepare.cmd = """
+for ((i=1;i<=60;i++)); do
+  # 单独执行，避免短路；并把输出静音
+  podman info  >/dev/null 2>&1
+  podman_ok=$?
+  buildah info >/dev/null 2>&1
+  buildah_ok=$?
 
-machine-run = { cmd = 'podman machine ssh podman-machine-default "cd $PWD && bash"' }
+  if [[ $podman_ok -eq 0 && $buildah_ok -eq 0 ]]; then
+    echo "Podman and Buildah are ready."
+    exit 0
+  fi
 
-init-machine = { cmd = 'podman machine list --format "{{ "{{.Name}}" }}" | grep -q podman-machine-default || podman machine init --username rok --image {{ image }}', args = [
+  echo "[$i/60] Waiting for Podman and Buildah..."
+  sleep 1
+done
+"""
+prepare.interpreter = "bash"
+
+# machine-bash = { cmd = 'podman machine ssh podman-machine-default "cd $PWD && bash"' }
+machine-bash = { cmd = [
+  "podman",
+  "machine",
+  "ssh",
+  "podman-machine-default",
+  "cd $PWD && bash",
+] }
+
+init-machine = { cmd = 'podman machine list --format "{{ "{{.Name}}" }}" | grep -q podman-machine-default || podman machine init --username $USER --image {{ image }}', args = [
   { arg = "image", default = "docker://quay.io/podman/machine-os:next" },
 ] }
 
@@ -87,9 +157,6 @@ set-runner.depends-on = [
 # attach-machine = { cmd = 'podman machine ssh', interpreter = "bash" }
 # attach-machine = { cmd = "ssh -i /home/rok/.local/share/containers/podman/machine/machine -p 43369 root@localhost" }
 
-[environments]
-podman = { features = ["podman"], solve-group = "default" }
-
 [feature.podman.activation.env]
 CONTAINER_NAME = "dagger-engine-custom"
 CONTAINER_SOCK = "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman-machine-default-api.sock"
@@ -98,7 +165,3 @@ CONTAINER_SOCK = "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman-machine-d
 __ = """$(
 touch $CONDA_PREFIX/etc/containers/nodocker
 )"""
-
-[activation.env]
-JUPYTER_PATH = "$CONDA_PREFIX/share/jupyter"
-_EXPERIMENTAL_DAGGER_CLI_BIN = "$CONDA_PREFIX/bin/dagger"

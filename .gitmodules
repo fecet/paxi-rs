@@ -1,0 +1,3 @@
+[submodule "thirdparty/podman-machine-os"]
+	path = thirdparty/podman-machine-os
+	url = https://github.com/fecet/podman-machine-os.git
